@@ -1,10 +1,12 @@
 from typing import Dict, List, Tuple, Optional, Any
+import logging
 import torch
 import numpy as np
 from torch.utils.data import Dataset
 
 ExperimentalCondition = Dict[str, Any]
 SpeciesData = Dict[str, np.ndarray]
+LOGGER = logging.getLogger(__name__)
 
 SPECIES_ORDER: List[str] = [
     'pEGFR', 'HER2', 'HER3', 'IGF1R', 'pCRAF', 'pMEK', 
@@ -158,6 +160,7 @@ def prepare_training_tensors(
     holdout_timepoints: Optional[List[float]] = None,
     holdout_condition: Optional[str] = None,
     partial_condition_train_timepoints: Optional[List[float]] = None,
+    normalization_mode: str = "train_only",
 ) -> Tuple[Dict[str, Any], Dict[str, Any], Dict[str, torch.Tensor]]:
     """
     Prepares training and testing tensors from raw experimental data.
@@ -187,10 +190,17 @@ def prepare_training_tensors(
         test_data: Dict with keys 't', 'drugs', 'y_norm', 'y_raw'
         scalers: Dict with normalization factors
     """
+    LOGGER.info(
+        "Preparing tensors | split_mode=%s | holdout_condition=%s | normalization_mode=%s",
+        split_mode,
+        holdout_condition,
+        normalization_mode,
+    )
+
     if holdout_timepoints is None:
         holdout_timepoints = [24.0]
     
-    all_t, all_y, all_drugs = [], [], []
+    all_t, all_y, all_drugs, all_condition_labels = [], [], [], []
     
     experiments = TRAINING_DATA_LIST
     if condition_name:
@@ -217,15 +227,16 @@ def prepare_training_tensors(
         all_t.append(t_points)
         all_y.append(y_exp)
         all_drugs.append(drug_mat)
+        all_condition_labels.append(np.array([exp["name"]] * num_pts))
         
     t_data = np.concatenate(all_t)
     y_data = np.concatenate(all_y)
     drugs_data = np.concatenate(all_drugs)
+    condition_data = np.concatenate(all_condition_labels)
     
     t_max = 48.0
     
     if split_mode == "holdout":
-        holdout_set = set(holdout_timepoints)
         test_mask = np.array([
             any(abs(float(t) - h) < 1e-4 for h in holdout_timepoints)
             for t in t_data
@@ -285,16 +296,30 @@ def prepare_training_tensors(
             for label, t in zip(condition_labels, t_data)
         ])
         test_mask = ~train_mask
-    else:
+    elif split_mode == "cutoff":
         train_mask = t_data <= train_until_hour
         test_mask = ~train_mask
+    else:
+        raise ValueError(
+            f"Invalid split_mode: {split_mode}. "
+            "Valid modes: ['holdout', 'condition_holdout', 'partial_condition_holdout', 'cutoff']"
+        )
+
+    def compute_scaler(y_train: np.ndarray, y_full: np.ndarray, mode: str = "train_only") -> Tuple[np.ndarray, np.ndarray]:
+        if mode == "train_only":
+            y_min_local = np.min(y_train, axis=0)
+            y_max_local = np.max(y_train, axis=0)
+        elif mode == "global":
+            y_min_local = np.min(y_full, axis=0)
+            y_max_local = np.max(y_full, axis=0)
+        else:
+            raise ValueError(f"Invalid normalization mode: {mode}. Valid modes: ['train_only', 'global']")
+        return y_min_local, y_max_local
     
-    # FIXED — use all data for scaler range computation.
-    # This is NOT a label leak: the scaler is a linear preprocessing transform.
-    # Using the full biological range ensures test values are representable
-    # in normalized space, which is required for Softplus output activation.
-    y_min = np.min(y_data, axis=0)
-    y_max = np.max(y_data, axis=0)
+    if not train_mask.any():
+        raise ValueError("Training split is empty. Check split_mode and holdout configuration.")
+
+    y_min, y_max = compute_scaler(y_data[train_mask], y_data, mode=normalization_mode)
     y_range = y_max - y_min
     y_range[y_range == 0] = 1.0
     
@@ -307,16 +332,23 @@ def prepare_training_tensors(
             't_norm': (t_data[mask] / t_max).reshape(-1, 1),
             'drugs': drugs_data[mask],
             'y_norm': y_norm_all[mask],
-            'y_raw': y_data[mask]
+            'y_raw': y_data[mask],
+            'condition': condition_data[mask],
         }
     
     train_data = package_data(train_mask)
     test_data = package_data(test_mask)
+    LOGGER.info(
+        "Prepared dataset sizes | train=%d | test=%d",
+        len(train_data['t']),
+        len(test_data['t']),
+    )
     
     scalers = {
         'y_min': torch.tensor(y_min, dtype=torch.float32),
         'y_range': torch.tensor(y_range, dtype=torch.float32),
-        't_range': torch.tensor(t_max, dtype=torch.float32)
+        't_range': torch.tensor(t_max, dtype=torch.float32),
+        'normalization_mode': normalization_mode,
     }
     
     return train_data, test_data, scalers
@@ -380,4 +412,3 @@ def get_collocation_points(n_points: int = 2000, no_drug_fraction: float = 0.2) 
     drugs_phys = drugs_phys[shuffle_idx]
     
     return torch.tensor(t_physics), torch.tensor(drugs_phys)
-
