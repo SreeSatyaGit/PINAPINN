@@ -1,7 +1,5 @@
 import torch
-import torch.nn as nn
 import numpy as np
-import matplotlib.pyplot as plt
 import matplotlib.pyplot as plt
 from pina import LabelTensor
 from run_pina_model import SignalingModel
@@ -12,7 +10,8 @@ def visualize():
     train_data, test_data, scalers = prepare_training_tensors(
         split_mode="partial_condition_holdout",
         holdout_condition="Vem + PI3Ki Combo",
-        partial_condition_train_timepoints=[0.0, 1.0, 4.0]
+        partial_condition_train_timepoints=[0.0, 1.0, 4.0],
+        normalization_mode="train_only",
     )
     
     # Load model

@@ -9,3 +9,8 @@ __pycache__/
 debug_pina.py
 check_data.py
 tmp/
+lightning_logs/
+*.ckpt
+*.pt
+*.csv
+*.npy
