@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import numpy as np
 import random
 import logging
@@ -107,7 +108,10 @@ class SignalingModel(nn.Module):
         })
 
     def forward(self, x):
-        return self.net(x)
+        # Pass through backbone
+        out = self.net(x)
+        # Ensure non-negative biological concentrations
+        return F.softplus(out)
 
 # ── Problem ───────────────────────────────────────────────────────────────
 class SignalingProblem(AbstractProblem):
@@ -128,13 +132,18 @@ class SignalingProblem(AbstractProblem):
         )
 
         # Collocation points for physics (Denser for better convergence)
-        t_col, drugs_col = get_collocation_points(n_points=5000)
-        X_phys = LabelTensor(torch.cat([t_col, drugs_col], dim=1), self.input_variables)
+        t_col, drugs_col = get_collocation_points(n_points=6000)
+        X_phys_raw = torch.cat([t_col, drugs_col], dim=1)
+        X_phys = LabelTensor(X_phys_raw, self.input_variables)
+        
+        # Dedicated set for steady state (strictly No-Drug points)
+        ss_mask = (X_phys_raw[:, 1:].sum(dim=1) < 1e-4) # all drugs near 0
+        X_ss = LabelTensor(X_phys_raw[ss_mask], self.input_variables)
 
         self._conditions = {
             'data':         Condition(input=X_data, target=Y_data),
             'physics':      Condition(input=X_phys, equation=Equation(self.signaling_odes)),
-            'steady_state': Condition(input=X_phys, equation=Equation(self.steady_state_odes)),
+            'steady_state': Condition(input=X_ss, equation=Equation(self.steady_state_odes)),
         }
         super().__init__()
 
@@ -291,33 +300,15 @@ class SignalingProblem(AbstractProblem):
         return out
 
     def steady_state_odes(self, input_, output_):
-        inp = input_.as_subclass(torch.Tensor)
-        drug_sum = inp[:, 1:].sum(dim=1)
-        no_drug_mask = drug_sum < 1e-6
-        n_nd = no_drug_mask.sum().item()
-
-        if n_nd == 0:
-            zero = torch.zeros(len(input_), 1, device=input_.device)
-            zero = zero.as_subclass(LabelTensor)
-            zero.labels = ['ss_res']
-            return zero
-
+        # Input contains only no-drug points (filtered in __init__)
         dy_dt_lt = pina_grad(output_, input_, components=self.output_variables, d='t')
         dy_dt_norm = dy_dt_lt.as_subclass(torch.Tensor)
         dy_dt = (dy_dt_norm * self.scalers['y_range']) / self.scalers['t_range']
-        y_scale = self.scalers['y_range'] + 1e-8
-
-        dy_nd = dy_dt[no_drug_mask] / y_scale.unsqueeze(0)
-
-        full = torch.zeros(len(input_), 1, device=input_.device)
-        # Stricter steady-state constraint (un-normalized MSE for zero drift)
-        full[no_drug_mask] = dy_dt[no_drug_mask].pow(2).mean(dim=1, keepdim=True)
         
-        full = torch.nan_to_num(full, nan=0.0, posinf=0.0, neginf=0.0)
-        
-        full = full.as_subclass(LabelTensor)
-        full.labels = ['ss_res']
-        return full
+        # We return the raw gradient vector; PINN will compute MSE(dy_dt, 0)
+        out = dy_dt.as_subclass(LabelTensor)
+        out.labels = [f"ss_{s}" for s in SPECIES_ORDER]
+        return torch.nan_to_num(out, nan=0.0)
 
 # ── Main ──────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
@@ -326,7 +317,7 @@ if __name__ == "__main__":
     split_mode = "partial_condition_holdout"
     holdout_condition = "Vem + PI3Ki Combo"
     partial_condition_train_timepoints = [0.0, 1.0, 4.0]
-    max_epochs = 2000
+    max_epochs = 3000
     learning_rate = 2e-4
     set_seed(seed)
 
@@ -349,7 +340,7 @@ if __name__ == "__main__":
         problem=problem,
         model=model,
         optimizer=TorchOptimizer(torch.optim.Adam, lr=learning_rate),
-        weighting=ScalarWeighting(weights={'data': 10.0, 'steady_state': 10.0})
+        weighting=ScalarWeighting(weights={'data': 50.0, 'steady_state': 100.0})
     )
 
     trainer = Trainer(

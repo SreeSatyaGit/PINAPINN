@@ -33,7 +33,8 @@ def visualize():
         'Vemurafenib Only (0.5)',
         'Trametinib Only (0.3)',
         'Vem + Tram Combo',
-        'Vem + PI3Ki Combo'
+        'Vem + PI3Ki Combo',
+        'Vem + panRAS Combo'
     ]
     
     # Species to plot
@@ -100,7 +101,9 @@ def visualize():
             if i == 0:
                 ax.set_ylabel("Expression Level")
             
-            ax.set_ylim(0, max(y_true.max() * 1.5, preds[:, sp_idx].max() * 1.5, 0.5))
+            # Set bounds: always start at 0 for biological concentrations
+            ax.set_ylim(bottom=0)
+            ax.set_ylim(top=max(y_true.max() * 1.5, preds[:, sp_idx].max() * 1.5, 0.5))
             
             if i == len(plot_species) - 1:
                 ax.legend(loc='upper right', frameon=True, fontsize=10)
