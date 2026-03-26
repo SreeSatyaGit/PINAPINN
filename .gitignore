@@ -1,0 +1,11 @@
+# PINA signaling PINN
+pina/
+*.pth
+plot_*.png
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.DS_Store
+debug_pina.py
+check_data.py
+tmp/
