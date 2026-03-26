@@ -200,7 +200,7 @@ def prepare_training_tensors(
     if holdout_timepoints is None:
         holdout_timepoints = [24.0]
     
-    all_t, all_y, all_drugs = [], [], []
+    all_t, all_y, all_drugs, all_condition_labels = [], [], [], []
     
     experiments = TRAINING_DATA_LIST
     if condition_name:
@@ -227,10 +227,12 @@ def prepare_training_tensors(
         all_t.append(t_points)
         all_y.append(y_exp)
         all_drugs.append(drug_mat)
+        all_condition_labels.append(np.array([exp["name"]] * num_pts))
         
     t_data = np.concatenate(all_t)
     y_data = np.concatenate(all_y)
     drugs_data = np.concatenate(all_drugs)
+    condition_data = np.concatenate(all_condition_labels)
     
     t_max = 48.0
     
@@ -330,7 +332,8 @@ def prepare_training_tensors(
             't_norm': (t_data[mask] / t_max).reshape(-1, 1),
             'drugs': drugs_data[mask],
             'y_norm': y_norm_all[mask],
-            'y_raw': y_data[mask]
+            'y_raw': y_data[mask],
+            'condition': condition_data[mask],
         }
     
     train_data = package_data(train_mask)
