@@ -1,7 +1,8 @@
 import torch
 import torch.nn as nn
 import numpy as np
-import warnings
+import random
+import logging
 from pina import Condition, LabelTensor, Trainer
 from pina.solver import PINN
 from pina.problem import AbstractProblem
@@ -13,7 +14,17 @@ from pina.operator import grad as pina_grad
 
 from data_utils import prepare_training_tensors, get_collocation_points, SPECIES_ORDER
 
-warnings.filterwarnings("ignore")
+logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
+LOGGER = logging.getLogger(__name__)
+
+
+def set_seed(seed: int) -> None:
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
 
 # ── Initial guesses for learnable kinetic parameters ──────────────────────
 INITIAL_K_PARAMS = {
@@ -265,12 +276,21 @@ class SignalingProblem(AbstractProblem):
 
 # ── Main ──────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    print("Initialising PINA Signaling Model …")
+    seed = 42
+    normalization_mode = "train_only"
+    set_seed(seed)
+
+    LOGGER.info("Initialising PINA Signaling Model")
+    LOGGER.info("Seed=%d", seed)
+
     train_data, test_data, scalers = prepare_training_tensors(
         split_mode="partial_condition_holdout",
         holdout_condition="Vem + PI3Ki Combo",
         partial_condition_train_timepoints=[0.0, 1.0, 4.0],
+        normalization_mode=normalization_mode,
     )
+    LOGGER.info("Normalization mode=%s", scalers["normalization_mode"])
+    LOGGER.info("Train samples=%d | Test samples=%d", len(train_data["t"]), len(test_data["t"]))
 
     model   = SignalingModel()
     problem = SignalingProblem(train_data, scalers, model)
@@ -290,11 +310,11 @@ if __name__ == "__main__":
         gradient_clip_val=1.0,
     )
 
-    print("Training for 1000 epochs …")
+    LOGGER.info("Training for 1000 epochs")
     trainer.train()
 
     # ── Evaluation ────────────────────────────────────────────────────
-    print("\nEvaluating on held‑out test set …")
+    LOGGER.info("Evaluating on held‑out test set")
     t_test = torch.tensor(test_data['t_norm'], dtype=torch.float32)
     d_test = torch.tensor(test_data['drugs'],  dtype=torch.float32)
     X_test = LabelTensor(
@@ -310,7 +330,8 @@ if __name__ == "__main__":
     
     # Calculate MSE on normalized space
     test_mse = nn.MSELoss()(y_pred_norm, y_true_norm)
-    print(f"Test MSE (normalised): {test_mse.item():.6f}")
+    assert not torch.isnan(test_mse), "NaN detected in normalized test loss"
+    LOGGER.info("Test MSE (normalized): %.6f", test_mse.item())
     
     # Calculate MSE on actual un-normalized space
     y_range = scalers['y_range']
@@ -319,9 +340,10 @@ if __name__ == "__main__":
     y_true = y_true_norm * y_range + y_min
     
     true_mse = nn.MSELoss()(y_pred, y_true)
-    print(f"Test MSE (actual biological scale): {true_mse.item():.6f}")
+    assert not torch.isnan(true_mse), "NaN detected in un-normalized test loss"
+    LOGGER.info("Test MSE (actual biological scale): %.6f", true_mse.item())
 
-    print(f"Sample prediction (pERK, un-normalized):\n  {y_pred[0, 6].item():.4f}")
+    LOGGER.info("Sample prediction (pERK, un-normalized): %.4f", y_pred[0, 6].item())
 
     torch.save(model.state_dict(), "pina_signaling_model.pth")
-    print("Saved model → pina_signaling_model.pth")
+    LOGGER.info("Saved model → pina_signaling_model.pth")
