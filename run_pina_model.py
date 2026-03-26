@@ -13,6 +13,7 @@ from pina.model import FeedForward
 from pina.equation import Equation
 from pina.callback import MetricTracker
 from pina.optim import TorchOptimizer
+from pina.loss import ScalarWeighting
 from pina.operator import grad as pina_grad
 
 from data_utils import prepare_training_tensors, get_collocation_points, SPECIES_ORDER
@@ -126,8 +127,8 @@ class SignalingProblem(AbstractProblem):
             self.output_variables,
         )
 
-        # Collocation points for physics
-        t_col, drugs_col = get_collocation_points(n_points=2000)
+        # Collocation points for physics (Denser for better convergence)
+        t_col, drugs_col = get_collocation_points(n_points=5000)
         X_phys = LabelTensor(torch.cat([t_col, drugs_col], dim=1), self.input_variables)
 
         self._conditions = {
@@ -309,7 +310,8 @@ class SignalingProblem(AbstractProblem):
         dy_nd = dy_dt[no_drug_mask] / y_scale.unsqueeze(0)
 
         full = torch.zeros(len(input_), 1, device=input_.device)
-        full[no_drug_mask] = dy_nd.pow(2).sum(dim=1, keepdim=True).sqrt()
+        # Stricter steady-state constraint (un-normalized MSE for zero drift)
+        full[no_drug_mask] = dy_dt[no_drug_mask].pow(2).mean(dim=1, keepdim=True)
         
         full = torch.nan_to_num(full, nan=0.0, posinf=0.0, neginf=0.0)
         
@@ -324,8 +326,8 @@ if __name__ == "__main__":
     split_mode = "partial_condition_holdout"
     holdout_condition = "Vem + PI3Ki Combo"
     partial_condition_train_timepoints = [0.0, 1.0, 4.0]
-    max_epochs = 1000
-    learning_rate = 5e-4
+    max_epochs = 2000
+    learning_rate = 2e-4
     set_seed(seed)
 
     LOGGER.info("Initialising PINA Signaling Model")
@@ -347,6 +349,7 @@ if __name__ == "__main__":
         problem=problem,
         model=model,
         optimizer=TorchOptimizer(torch.optim.Adam, lr=learning_rate),
+        weighting=ScalarWeighting(weights={'data': 10.0, 'steady_state': 10.0})
     )
 
     trainer = Trainer(
