@@ -10,7 +10,7 @@ def visualize ():
     train_data ,test_data ,scalers =prepare_training_tensors (
     split_mode ="partial_condition_holdout",
     holdout_condition ="Vem + PI3Ki Combo",
-    partial_condition_train_timepoints =[0.0 ,1.0 ,4.0 ],
+    partial_condition_train_timepoints =[0.0 ,1.0 ,4.0 ,8.0 ,48.0 ],
     normalization_mode ="train_only",
     )
 
@@ -77,7 +77,7 @@ def visualize ():
             y_true =exp_data ['species'][sp_name ]
 
             if cond_name =="Vem + PI3Ki Combo":
-                is_test =np .array ([t >4.5 for t in t_true ])
+                is_test =np .array ([abs (t -24.0 )<1e-4 for t in t_true ])
             else :
                 is_test =np .zeros_like (t_true ,dtype =bool )
 

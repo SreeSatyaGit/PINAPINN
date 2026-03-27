@@ -257,7 +257,6 @@ class SignalingProblem (AbstractProblem ):
 
         ka =torch .abs (k ['k_akt']);kad =torch .abs (k ['k_akt_deg'])
         res8 =dy_dt [:,8 ]-(ka *PI3K_input *(1.0 -PI3Ki_eff )*Ks_akt /(Ks_akt +pAKT +1e-8 )-kad *pAKT )
-
         k4 =torch .abs (k ['k_4ebp1']);k4d =torch .abs (k ['k_4ebp1_deg']);k4b =torch .abs (k ['k_4ebp1_comp'])
         res9 =dy_dt [:,9 ]-(k4 *pAKT *Ks_4ebp1 /(Ks_4ebp1 +p4EBP1 +1e-8 )+k4b -k4d *p4EBP1 )
 
@@ -291,7 +290,7 @@ if __name__ =="__main__":
     normalization_mode ="train_only"
     split_mode ="partial_condition_holdout"
     holdout_condition ="Vem + PI3Ki Combo"
-    partial_condition_train_timepoints =[0.0 ,1.0 ,4.0 ]
+    partial_condition_train_timepoints =[0.0 ,1.0 ,4.0 ,8.0 ,48.0 ]
     max_epochs =3000 
     learning_rate =2e-4 
     set_seed (seed )
@@ -327,7 +326,7 @@ if __name__ =="__main__":
     gradient_clip_val =1.0 ,
     )
 
-    LOGGER .info ("Training for 1000 epochs")
+    LOGGER .info ("Training for %d epochs",max_epochs )
     trainer .train ()
 
     LOGGER .info ("Evaluating on held‑out test set")
