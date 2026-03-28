@@ -6,6 +6,7 @@ import random
 import logging 
 import csv 
 import json 
+from pathlib import Path
 from collections import defaultdict 
 from pina import Condition ,LabelTensor ,Trainer 
 from pina .solver import PINN 
@@ -66,6 +67,101 @@ def save_metrics_csv (rows ,path :str )->None :
         writer =csv .DictWriter (f ,fieldnames =fieldnames )
         writer .writeheader ()
         writer .writerows (rows )
+
+class OptimizationSnapshotCallback:
+    """
+    Save optimization snapshots every N epochs to support dynamic visualization.
+    """
+    def __init__(
+        self,
+        model: nn.Module,
+        solver: PINN,
+        problem: "SignalingProblem",
+        train_data,
+        scalers,
+        every_n_epochs: int = 10,
+        max_snapshots: int = 10,
+        output_dir: str = "optimization_snapshots",
+    ) -> None:
+        self.model = model
+        self.solver = solver
+        self.problem = problem
+        self.every_n_epochs = every_n_epochs
+        self.max_snapshots = max_snapshots
+        self.output_dir = Path(output_dir)
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.history_path = self.output_dir / "snapshot_history.jsonl"
+        self.snapshots_written = 0
+
+        self._y_min = scalers["y_min"]
+        self._y_range = scalers["y_range"]
+        t_train = torch.tensor(train_data["t_norm"], dtype=torch.float32)
+        d_train = torch.tensor(train_data["drugs"], dtype=torch.float32)
+        self._x_train = LabelTensor(
+            torch.cat([t_train, d_train], dim=1),
+            ["t", "vem", "tram", "pi3k", "ras"],
+        )
+        self._y_train = torch.tensor(train_data["y_raw"], dtype=torch.float32)
+
+        if self.history_path.exists():
+            self.history_path.unlink()
+
+    def _effective_param(self, name: str, value: torch.Tensor) -> float:
+        if name in {"hill_coeff", "n_dusp"}:
+            return float(torch.clamp(value.detach(), min=1.0, max=4.0).item())
+        return float(F.softplus(value.detach()).item())
+
+    def _collect_snapshot(self, epoch: int):
+        with torch.no_grad():
+            pred_norm = self.solver.forward(self._x_train).as_subclass(torch.Tensor)
+            pred = pred_norm * self._y_range + self._y_min
+            data_mse_per_species = ((pred - self._y_train) ** 2).mean(dim=0).cpu().tolist()
+
+        phys_input = self.problem._conditions["physics"].input
+        phys_input_g = phys_input.clone().detach().requires_grad_(True)
+        phys_pred_g = self.solver.forward(phys_input_g)
+        phys_residual = self.problem.signaling_odes(phys_input_g, phys_pred_g)
+        phys_tensor = phys_residual.as_subclass(torch.Tensor)
+        physics_mse_per_species = ((phys_tensor ** 2).mean(dim=0)).detach().cpu().tolist()
+
+        raw_params = {
+            k: float(v.detach().cpu().item())
+            for k, v in self.model.k_params.items()
+        }
+        effective_params = {
+            k: self._effective_param(k, v)
+            for k, v in self.model.k_params.items()
+        }
+        return {
+            "epoch": int(epoch),
+            "data_mse_per_species": data_mse_per_species,
+            "physics_mse_per_species": physics_mse_per_species,
+            "raw_parameters": raw_params,
+            "effective_parameters": effective_params,
+        }
+
+    def on_train_epoch_end(self, trainer, pl_module) -> None:
+        epoch = int(trainer.current_epoch) + 1
+        if epoch % self.every_n_epochs != 0:
+            return
+        if self.snapshots_written >= self.max_snapshots:
+            return
+
+        snapshot = self._collect_snapshot(epoch)
+        ckpt_path = self.output_dir / f"model_epoch_{epoch:04d}.pth"
+        torch.save(self.model.state_dict(), ckpt_path)
+        snapshot["checkpoint"] = str(ckpt_path)
+
+        with open(self.history_path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(snapshot) + "\n")
+
+        self.snapshots_written += 1
+        LOGGER.info(
+            "Saved optimization snapshot %d/%d at epoch %d",
+            self.snapshots_written,
+            self.max_snapshots,
+            epoch,
+        )
 
 INITIAL_K_PARAMS ={
 'hill_coeff':2.0 ,'IC50_vem':0.1 ,'IC50_tram':0.1 ,'IC50_pi3k':0.1 ,'IC50_ras':0.1 ,
@@ -332,11 +428,22 @@ if __name__ =="__main__":
         })
     )
 
+    optimization_snapshot_cb = OptimizationSnapshotCallback(
+        model=model,
+        solver=solver,
+        problem=problem,
+        train_data=train_data,
+        scalers=scalers,
+        every_n_epochs=10,
+        max_snapshots=10,
+        output_dir="optimization_snapshots",
+    )
+
     trainer =Trainer (
     solver =solver ,
     max_epochs =max_epochs ,
     accelerator ="cpu",
-    callbacks =[MetricTracker ()],
+    callbacks =[MetricTracker (),optimization_snapshot_cb ],
     enable_model_summary =False ,
     gradient_clip_val =1.0 ,
     )
@@ -422,4 +529,3 @@ if __name__ =="__main__":
 
     torch .save (model .state_dict (),"pina_signaling_model.pth")
     LOGGER .info ("Saved model → pina_signaling_model.pth")
-

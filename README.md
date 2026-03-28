@@ -54,6 +54,19 @@ python3 visualize_predictions.py
 ```
 Output figures will trace both normalized input data points and continuous lines representing the integrated differential predictions.
 
+### 2b. Optimization Dynamics Visualization (10 Snapshot Figures)
+To generate **10 dynamic training snapshots** (one every 10 epochs) showing:
+- how each protein species is being fit (data loss),
+- how each protein ODE residual is reduced (physics loss),
+- and the associated optimized parameter levels per protein:
+
+```bash
+python3 run_pina_model.py
+python3 optimization_dynamics_visualizer.py
+```
+
+The training script saves snapshot history and checkpoints in `optimization_snapshots/`, and the visualizer writes 10 figures into `optimization_figures/`.
+
 ### 3. In-Silico Drug Simulation
 To evaluate the model's performance as a digital twin under novel drug concentrations not present in the primary dataset:
 ```bash
