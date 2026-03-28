@@ -172,91 +172,91 @@ class SignalingProblem (AbstractProblem ):
 
         n =torch .clamp (k ['hill_coeff'],1.0 ,4.0 )
 
-        Vem_inh =(Vem +eps )**n /(torch .abs (k ['IC50_vem'])**n +(Vem +eps )**n +1e-8 )
-        Tram_eff =(Tram +eps )**n /(torch .abs (k ['IC50_tram'])**n +(Tram +eps )**n +1e-8 )
-        PI3Ki_eff =(PI3Ki +eps )**n /(torch .abs (k ['IC50_pi3k'])**n +(PI3Ki +eps )**n +1e-8 )
-        Ras_eff =(RasInh +eps )**n /(torch .abs (k ['IC50_ras'])**n +(RasInh +eps )**n +1e-8 )
+        Vem_inh =(Vem +eps )**n /(F .softplus (k ['IC50_vem'])**n +(Vem +eps )**n +1e-8 )
+        Tram_eff =(Tram +eps )**n /(F .softplus (k ['IC50_tram'])**n +(Tram +eps )**n +1e-8 )
+        PI3Ki_eff =(PI3Ki +eps )**n /(F .softplus (k ['IC50_pi3k'])**n +(PI3Ki +eps )**n +1e-8 )
+        Ras_eff =(RasInh +eps )**n /(F .softplus (k ['IC50_ras'])**n +(RasInh +eps )**n +1e-8 )
 
-        Ks_egfr =torch .abs (k ['K_sat_egfr'])
-        Ks_her2 =torch .abs (k ['K_sat_her2'])
-        Ks_her3 =torch .abs (k ['K_sat_her3'])
-        Ks_igfr =torch .abs (k ['K_sat_igfr'])
-        Ks_craf =torch .abs (k ['K_sat_craf'])
-        Ks_mek =torch .abs (k ['K_sat_mek'])
-        Ks_erk =torch .abs (k ['K_sat_erk'])
-        Ks_akt =torch .abs (k ['K_sat_akt'])
-        Ks_4ebp1 =torch .abs (k ['K_sat_4ebp1'])
+        Ks_egfr =F .softplus (k ['K_sat_egfr'])
+        Ks_her2 =F .softplus (k ['K_sat_her2'])
+        Ks_her3 =F .softplus (k ['K_sat_her3'])
+        Ks_igfr =F .softplus (k ['K_sat_igfr'])
+        Ks_craf =F .softplus (k ['K_sat_craf'])
+        Ks_mek =F .softplus (k ['K_sat_mek'])
+        Ks_erk =F .softplus (k ['K_sat_erk'])
+        Ks_akt =F .softplus (k ['K_sat_akt'])
+        Ks_4ebp1 =F .softplus (k ['K_sat_4ebp1'])
 
-        k_erk_rtk =torch .abs (k ['k_erk_rtk'])
-        Km_rtk =torch .abs (k ['Km_rtk'])
+        k_erk_rtk =F .softplus (k ['k_erk_rtk'])
+        Km_rtk =F .softplus (k ['Km_rtk'])
         ERK_feedback =k_erk_rtk *pERK /(Km_rtk +pERK +1e-8 )
 
-        k_up =torch .abs (k ['k_up'])
+        k_up =F .softplus (k ['k_up'])
         drug_relief =k_up *(Vem_inh +Tram_eff +PI3Ki_eff )
 
-        k_erk_sos =torch .abs (k ['k_erk_sos'])
-        k_akt_rtk =torch .abs (k ['k_akt_rtk'])
-        Km_sos =torch .abs (k ['Km_sos'])
-        Km_artk =torch .abs (k ['Km_artk'])
+        k_erk_sos =F .softplus (k ['k_erk_sos'])
+        k_akt_rtk =F .softplus (k ['k_akt_rtk'])
+        Km_sos =F .softplus (k ['Km_sos'])
+        Km_artk =F .softplus (k ['Km_artk'])
         ERK_to_SOS =k_erk_sos *pERK /(Km_sos +pERK +1e-8 )
         AKT_to_RTK =k_akt_rtk *pAKT /(Km_artk +pAKT +1e-8 )
 
         RTK_total =pEGFR +HER2 +1.5 *HER3 +IGF1R 
         RAS_GTP =RTK_total *(1.0 -ERK_to_SOS )*(1.0 -AKT_to_RTK )*(1.0 -Ras_eff )
 
-        k_raf_pi3k =torch .abs (k ['k_raf_pi3k'])
-        Km_raf_pi3k =torch .abs (k ['Km_raf_pi3k'])
-        k_erk_pi3k =torch .abs (k ['k_erk_pi3k'])
-        Km_erk_pi3k =torch .abs (k ['Km_erk_pi3k'])
+        k_raf_pi3k =F .softplus (k ['k_raf_pi3k'])
+        Km_raf_pi3k =F .softplus (k ['Km_raf_pi3k'])
+        k_erk_pi3k =F .softplus (k ['k_erk_pi3k'])
+        Km_erk_pi3k =F .softplus (k ['Km_erk_pi3k'])
         RAF_to_PI3K =k_raf_pi3k *pCRAF /(Km_raf_pi3k +pCRAF +1e-8 )
         ERK_to_PI3K =k_erk_pi3k *pERK /(Km_erk_pi3k +pERK +1e-8 )
 
-        k_ras_frac =torch .abs (k ['k_ras_pi3k_frac'])
+        k_ras_frac =F .softplus (k ['k_ras_pi3k_frac'])
         PI3K_input =RTK_total *(1.0 -ERK_to_PI3K )*(1.0 -k_ras_frac *Ras_eff )+RAF_to_PI3K 
 
-        k_akt_raf =torch .abs (k ['k_akt_raf'])
-        Km_akt_raf =torch .abs (k ['Km_akt_raf'])
+        k_akt_raf =F .softplus (k ['k_akt_raf'])
+        Km_akt_raf =F .softplus (k ['Km_akt_raf'])
         AKT_RAF_inhib =k_akt_raf *pAKT /(Km_akt_raf +pAKT +1e-8 )
 
-        k_paradox =torch .abs (k ['k_paradox'])
+        k_paradox =F .softplus (k ['k_paradox'])
         pCRAF_fl =pCRAF .clamp (min =0.05 )
         pi3ki_att =1.0 -0.7 *PI3Ki_eff 
         Vem_paradox =k_paradox *Vem *Ks_craf /(Ks_craf +pCRAF_fl +1e-8 )*pi3ki_att 
 
-        ke =torch .abs (k ['k_egfr']);ked =torch .abs (k ['k_egfr_deg'])
+        ke =F .softplus (k ['k_egfr']);ked =F .softplus (k ['k_egfr_deg'])
         res0 =dy_dt [:,0 ]-(ke *(1.0 +drug_relief )*Ks_egfr /(Ks_egfr +pEGFR +1e-8 )-(ked +ERK_feedback )*pEGFR )
 
-        kh2 =torch .abs (k ['k_her2']);kh2d =torch .abs (k ['k_her2_deg']);kh2tx =torch .abs (k ['k_her2_tx'])
+        kh2 =F .softplus (k ['k_her2']);kh2d =F .softplus (k ['k_her2_deg']);kh2tx =F .softplus (k ['k_her2_tx'])
         res1 =dy_dt [:,1 ]-(kh2 *Ks_her2 /(Ks_her2 +HER2 +1e-8 )+kh2tx *(1.0 -pERK /(Ks_erk +pERK +1e-8 ))-kh2d *HER2 )
 
-        kh3 =torch .abs (k ['k_her3']);kh3d =torch .abs (k ['k_her3_deg']);kh3tx =torch .abs (k ['k_her3_tx'])
+        kh3 =F .softplus (k ['k_her3']);kh3d =F .softplus (k ['k_her3_deg']);kh3tx =F .softplus (k ['k_her3_tx'])
         res2 =dy_dt [:,2 ]-(kh3 *Ks_her3 /(Ks_her3 +HER3 +1e-8 )+kh3tx *(1.0 -pERK /(Ks_erk +pERK +1e-8 ))-kh3d *HER3 )
 
-        ki =torch .abs (k ['k_igf']);kid =torch .abs (k ['k_igf_deg'])
+        ki =F .softplus (k ['k_igf']);kid =F .softplus (k ['k_igf_deg'])
         res3 =dy_dt [:,3 ]-(ki *Ks_igfr /(Ks_igfr +IGF1R +1e-8 )-(kid +ERK_feedback +AKT_to_RTK )*IGF1R )
 
-        kc =torch .abs (k ['k_craf']);kcd =torch .abs (k ['k_craf_deg'])
+        kc =F .softplus (k ['k_craf']);kcd =F .softplus (k ['k_craf_deg'])
         res4 =dy_dt [:,4 ]-(kc *RAS_GTP *Ks_craf /(Ks_craf +pCRAF +1e-8 )+Vem_paradox -(kcd +AKT_RAF_inhib )*pCRAF )
 
-        km =torch .abs (k ['k_mek']);kmd =torch .abs (k ['k_mek_deg']);kmb =torch .abs (k ['k_mek_braf'])
+        km =F .softplus (k ['k_mek']);kmd =F .softplus (k ['k_mek_deg']);kmb =F .softplus (k ['k_mek_braf'])
         braf_ic50 =0.04 
         Vem_braf =(Vem +eps )**n /(braf_ic50 **n +(Vem +eps )**n +1e-8 )
         res5 =dy_dt [:,5 ]-((km *pCRAF +kmb *(1.0 -Vem_braf ))*(1.0 -Tram_eff )*Ks_mek /(Ks_mek +pMEK +1e-8 )-kmd *pMEK )
 
-        kdusp_cat =torch .abs (k ['k_dusp_cat']);Km_dusp =torch .abs (k ['Km_dusp'])
+        kdusp_cat =F .softplus (k ['k_dusp_cat']);Km_dusp =F .softplus (k ['Km_dusp'])
         DUSP_act =kdusp_cat *DUSP6 /(Km_dusp +DUSP6 +1e-8 )
-        ker =torch .abs (k ['k_erk']);kerd =torch .abs (k ['k_erk_deg'])
+        ker =F .softplus (k ['k_erk']);kerd =F .softplus (k ['k_erk_deg'])
         res6 =dy_dt [:,6 ]-(ker *pMEK *Ks_erk /(Ks_erk +pERK +1e-8 )-(kerd +DUSP_act )*pERK )
 
         n_dusp =torch .clamp (k ['n_dusp'],1.5 ,3.5 )
-        kds =torch .abs (k ['k_dusp_synth']);Km_ds =torch .abs (k ['Km_dusp_s'])
-        kdd =torch .abs (k ['k_dusp_deg'])
+        kds =F .softplus (k ['k_dusp_synth']);Km_ds =F .softplus (k ['Km_dusp_s'])
+        kdd =F .softplus (k ['k_dusp_deg'])
         DUSP_ind =kds *(pERK +eps )**n_dusp /(Km_ds **n_dusp +(pERK +eps )**n_dusp +1e-8 )
         res7 =dy_dt [:,7 ]-(DUSP_ind -kdd *DUSP6 )
 
-        ka =torch .abs (k ['k_akt']);kad =torch .abs (k ['k_akt_deg'])
+        ka =F .softplus (k ['k_akt']);kad =F .softplus (k ['k_akt_deg'])
         res8 =dy_dt [:,8 ]-(ka *PI3K_input *(1.0 -PI3Ki_eff )*Ks_akt /(Ks_akt +pAKT +1e-8 )-kad *pAKT )
-        k4 =torch .abs (k ['k_4ebp1']);k4d =torch .abs (k ['k_4ebp1_deg']);k4b =torch .abs (k ['k_4ebp1_comp'])
+        k4 =F .softplus (k ['k_4ebp1']);k4d =F .softplus (k ['k_4ebp1_deg']);k4b =F .softplus (k ['k_4ebp1_comp'])
         res9 =dy_dt [:,9 ]-(k4 *pAKT *Ks_4ebp1 /(Ks_4ebp1 +p4EBP1 +1e-8 )+k4b -k4d *p4EBP1 )
 
         w =[torch .sqrt (torch .abs (k [wn ])+1e-8 )
@@ -284,6 +284,14 @@ class SignalingProblem (AbstractProblem ):
         out .labels =[f"ss_{s }"for s in SPECIES_ORDER ]
         return torch .nan_to_num (out ,nan =0.0 )
 
+    def param_regularization_loss(self) -> torch.Tensor:
+        """Penalize kinetic parameters that drift outside [0, 5]."""
+        loss = torch.tensor(0.0)
+        for param in self._model.k_params.values():
+            loss = loss + torch.clamp(param - 5.0, min=0.0) ** 2
+            loss = loss + torch.clamp(-param, min=0.0) ** 2
+        return loss * 0.01
+
 if __name__ =="__main__":
     seed =42 
     normalization_mode ="train_only"
@@ -307,11 +315,21 @@ if __name__ =="__main__":
     model =SignalingModel ()
     problem =SignalingProblem (train_data ,scalers ,model )
 
-    solver =PINN (
-    problem =problem ,
-    model =model ,
-    optimizer =TorchOptimizer (torch .optim .Adam ,lr =learning_rate ),
-    weighting =ScalarWeighting (weights ={'data':50.0 ,'steady_state':100.0 })
+    # Loss weight rationale:
+    #   physics (10.0)      — ODE residuals are the primary learning signal.
+    #                         The network must satisfy the signaling dynamics.
+    #   steady_state (5.0)  — Anchors drug-free equilibrium; prevents drift at t=0.
+    #   data (1.0)          — Observational data fine-tunes the physics solution.
+    #                         A high data weight causes memorization, not physics learning.
+    solver = PINN(
+        problem=problem,
+        model=model,
+        optimizer=TorchOptimizer(torch.optim.Adam, lr=learning_rate),
+        weighting=ScalarWeighting(weights={
+            'data': 1.0,
+            'physics': 10.0,
+            'steady_state': 5.0,
+        })
     )
 
     trainer =Trainer (
@@ -325,6 +343,23 @@ if __name__ =="__main__":
 
     LOGGER .info ("Training for %d epochs",max_epochs )
     trainer .train ()
+
+    # --- Physics residual diagnostic ---
+    LOGGER.info("Computing physics residual on collocation points...")
+    with torch.no_grad():
+        phys_input = problem._conditions['physics'].input
+        phys_pred  = solver.forward(phys_input)
+
+    # Recompute with grad for ODE residual (requires grad)
+    phys_input_g = phys_input.clone().detach().requires_grad_(True)
+    phys_pred_g  = solver.forward(phys_input_g)
+    phys_residual = problem.signaling_odes(phys_input_g, phys_pred_g)
+    phys_res_tensor = phys_residual.as_subclass(torch.Tensor)
+    phys_mse = (phys_res_tensor ** 2).mean()
+    phys_mse = torch.nan_to_num(phys_mse, nan=0.0)
+    LOGGER.info("Physics residual MSE (collocation): %.6f", phys_mse.item())
+    del phys_input_g, phys_pred_g, phys_residual, phys_res_tensor
+    # --- End physics residual diagnostic ---
 
     eval_data = test_data if len (test_data ['t']) > 0 else train_data 
     eval_prefix = "Test" if len (test_data ['t']) > 0 else "Train (Fit)"
@@ -379,6 +414,7 @@ if __name__ =="__main__":
     "test_samples":int (len (test_data ["t"])),
     "eval_mse_normalized":float (eval_mse .item ()),
     "eval_mse_biological_scale":float (true_mse .item ()),
+    "phys_residual_mse": float(phys_mse.item()),
     }
     with open ("run_summary.json","w",encoding ="utf-8")as f :
         json .dump (run_summary ,f ,indent =2 )
