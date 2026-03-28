@@ -328,7 +328,7 @@ if __name__ =="__main__":
         weighting=ScalarWeighting(weights={
             'data': 1.0,
             'physics': 10.0,
-            'steady_state': 5.0,
+            'steady_state': 0.5,
         })
     )
 
