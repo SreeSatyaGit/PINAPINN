@@ -131,7 +131,7 @@ class SignalingProblem (AbstractProblem ):
         X_ss =LabelTensor (X_phys_raw [ss_mask ],self .input_variables )
 
         self ._conditions ={
-        'data':Condition (input =X_data ,target =Y_data ),
+        'data': Condition(input=X_data, target=Y_data),
         'physics':Condition (input =X_phys ,equation =Equation (self .signaling_odes )),
         'steady_state':Condition (input =X_ss ,equation =Equation (self .steady_state_odes )),
         }
@@ -147,8 +147,7 @@ class SignalingProblem (AbstractProblem ):
         k =self ._model .k_params 
         eps =1e-7 
 
-        dy_dt_lt =pina_grad (output_ ,input_ ,components =self .output_variables ,d ='t')
-
+        dy_dt_lt = pina_grad (output_ ,input_ ,components =self .output_variables ,d ='t')
         dy_dt_norm =dy_dt_lt .as_subclass (torch .Tensor )
         y_norm =output_ .as_subclass (torch .Tensor )
         inp =input_ .as_subclass (torch .Tensor )
@@ -271,7 +270,7 @@ class SignalingProblem (AbstractProblem ):
 
         residuals =torch .nan_to_num (residuals ,nan =0.0 ,posinf =0.0 ,neginf =0.0 )
 
-        out =residuals .as_subclass (LabelTensor )
+        out = residuals .as_subclass (LabelTensor )
         out .labels =[f"res_{s }"for s in SPECIES_ORDER ]
         return out 
 
@@ -288,9 +287,8 @@ class SignalingProblem (AbstractProblem ):
 if __name__ =="__main__":
     seed =42 
     normalization_mode ="train_only"
-    split_mode ="partial_condition_holdout"
-    holdout_condition ="Vem + PI3Ki Combo"
-    partial_condition_train_timepoints =[0.0 ,1.0 ,4.0 ,8.0 ,48.0 ]
+    split_mode ="cutoff"
+    train_until_hour = 48.0
     max_epochs =3000 
     learning_rate =2e-4 
     set_seed (seed )
@@ -300,8 +298,7 @@ if __name__ =="__main__":
 
     train_data ,test_data ,scalers =prepare_training_tensors (
     split_mode =split_mode ,
-    holdout_condition =holdout_condition ,
-    partial_condition_train_timepoints =partial_condition_train_timepoints ,
+    train_until_hour =train_until_hour ,
     normalization_mode =normalization_mode ,
     )
     LOGGER .info ("Normalization mode=%s",scalers ["normalization_mode"])
@@ -329,23 +326,26 @@ if __name__ =="__main__":
     LOGGER .info ("Training for %d epochs",max_epochs )
     trainer .train ()
 
-    LOGGER .info ("Evaluating on held‑out test set")
-    t_test =torch .tensor (test_data ['t_norm'],dtype =torch .float32 )
-    d_test =torch .tensor (test_data ['drugs'],dtype =torch .float32 )
-    X_test =LabelTensor (
-    torch .cat ([t_test ,d_test ],dim =1 ),
+    eval_data = test_data if len (test_data ['t']) > 0 else train_data 
+    eval_prefix = "Test" if len (test_data ['t']) > 0 else "Train (Fit)"
+    LOGGER .info (f"Evaluating on {eval_prefix} set")
+
+    t_eval =torch .tensor (eval_data ['t_norm'],dtype =torch .float32 )
+    d_eval =torch .tensor (eval_data ['drugs'],dtype =torch .float32 )
+    X_eval =LabelTensor (
+    torch .cat ([t_eval ,d_eval ],dim =1 ),
     ['t','vem','tram','pi3k','ras'],
     )
 
     with torch .no_grad ():
-        predictions =solver .forward (X_test )
+        predictions =solver .forward (X_eval )
 
     y_pred_norm =predictions .as_subclass (torch .Tensor )
-    y_true_norm =torch .tensor (test_data ['y_norm'],dtype =torch .float32 )
+    y_true_norm =torch .tensor (eval_data ['y_norm'],dtype =torch .float32 )
 
-    test_mse =nn .MSELoss ()(y_pred_norm ,y_true_norm )
-    assert not torch .isnan (test_mse ),"NaN detected in normalized test loss"
-    LOGGER .info ("Test MSE (normalized): %.6f",test_mse .item ())
+    eval_mse =nn .MSELoss ()(y_pred_norm ,y_true_norm )
+    assert not torch .isnan (eval_mse ),f"NaN detected in normalized {eval_prefix} loss"
+    LOGGER .info (f"{eval_prefix} MSE (normalized): %.6f",eval_mse .item ())
 
     y_range =scalers ['y_range']
     y_min =scalers ['y_min']
@@ -353,16 +353,16 @@ if __name__ =="__main__":
     y_true =y_true_norm *y_range +y_min 
 
     true_mse =nn .MSELoss ()(y_pred ,y_true )
-    assert not torch .isnan (true_mse ),"NaN detected in un-normalized test loss"
-    LOGGER .info ("Test MSE (actual biological scale): %.6f",true_mse .item ())
+    assert not torch .isnan (true_mse ),f"NaN detected in un-normalized {eval_prefix} loss"
+    LOGGER .info (f"{eval_prefix} MSE (actual biological scale): %.6f",true_mse .item ())
 
     LOGGER .info ("Sample prediction (pERK, un-normalized): %.4f",y_pred [0 ,6 ].item ())
 
     metrics_rows =compute_detailed_metrics (
     y_true .detach ().cpu ().numpy (),
     y_pred .detach ().cpu ().numpy (),
-    test_data ["t"],
-    test_data ["condition"],
+    eval_data ["t"],
+    eval_data ["condition"],
     )
     save_metrics_csv (metrics_rows ,"detailed_metrics.csv")
     LOGGER .info ("Saved detailed metrics → detailed_metrics.csv")
@@ -370,16 +370,15 @@ if __name__ =="__main__":
     run_summary ={
     "seed":seed ,
     "split_mode":split_mode ,
-    "holdout_condition":holdout_condition ,
-    "partial_condition_train_timepoints":partial_condition_train_timepoints ,
+    "train_until_hour":locals ().get ("train_until_hour"),
     "normalization_mode":normalization_mode ,
     "optimizer":"Adam",
     "learning_rate":learning_rate ,
     "max_epochs":max_epochs ,
     "train_samples":int (len (train_data ["t"])),
     "test_samples":int (len (test_data ["t"])),
-    "test_mse_normalized":float (test_mse .item ()),
-    "test_mse_biological_scale":float (true_mse .item ()),
+    "eval_mse_normalized":float (eval_mse .item ()),
+    "eval_mse_biological_scale":float (true_mse .item ()),
     }
     with open ("run_summary.json","w",encoding ="utf-8")as f :
         json .dump (run_summary ,f ,indent =2 )
