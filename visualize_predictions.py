@@ -8,14 +8,13 @@ from data_utils import prepare_training_tensors ,TRAINING_DATA_LIST ,SPECIES_ORD
 def visualize ():
     print ("Loading data and model...")
     train_data ,test_data ,scalers =prepare_training_tensors (
-    split_mode ="partial_condition_holdout",
-    holdout_condition ="Vem + PI3Ki Combo",
-    partial_condition_train_timepoints =[0.0 ,1.0 ,4.0 ,8.0 ,48.0 ],
+    split_mode ="cutoff",
+    train_until_hour =48.0,
     normalization_mode ="train_only",
     )
 
     model =SignalingModel ()
-    model .load_state_dict (torch .load ("pina_signaling_model.pth",map_location ='cpu',weights_only =True ))
+    model .load_state_dict (torch .load ("pina_signaling_model_Vemurafenib_Only.pth",map_location ='cpu',weights_only =True ))
     model .eval ()
 
     y_min =scalers ['y_min']
@@ -26,15 +25,10 @@ def visualize ():
     plt .rcParams ['font.family']='sans-serif'
 
     selected_conditions =[
-    'No Drug (Basal Steady State)',
-    'Vemurafenib Only (0.5)',
-    'Trametinib Only (0.3)',
-    'Vem + Tram Combo',
-    'Vem + PI3Ki Combo',
-    'Vem + panRAS Combo'
+    'Vemurafenib Only (0.5)'
     ]
 
-    plot_species =['pERK','pAKT','DUSP6','pMEK','pCRAF']
+    plot_species = SPECIES_ORDER
     species_indices =[SPECIES_ORDER .index (s )for s in plot_species ]
 
     for cond_name in selected_conditions :
@@ -65,11 +59,12 @@ def visualize ():
             preds_norm =model (X_input ).as_subclass (torch .Tensor )
             preds =preds_norm *y_range +y_min 
 
-        fig ,axes =plt .subplots (1 ,len (plot_species ),figsize =(20 ,4 ),sharex =True )
+        fig ,axes =plt .subplots (2 ,5 ,figsize =(20 ,8 ),sharex =True )
+        axes_flat = axes.flatten()
         fig .suptitle (f"Pathway Dynamics: {cond_name }",fontsize =16 ,fontweight ='bold',y =1.05 )
 
         for i ,(sp_name ,sp_idx )in enumerate (zip (plot_species ,species_indices )):
-            ax =axes [i ]
+            ax =axes_flat [i ]
 
             ax .plot (t_dense ,preds [:,sp_idx ],label ='PINN Prediction',color ='#1f77b4',linewidth =3 ,alpha =0.8 )
 
